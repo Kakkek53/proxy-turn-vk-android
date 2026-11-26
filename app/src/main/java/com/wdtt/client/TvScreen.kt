@@ -83,9 +83,6 @@ internal fun TvScreen(activity: MainActivity, settings: SettingsStore) {
             val profile = withContext(Dispatchers.IO) {
                 try {
                     val resolver = activity.contentResolver
-                    val name = resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
-                        ?.use { if (it.moveToFirst()) it.getString(0) else null }
-                        ?: uri.lastPathSegment?.substringAfterLast('/')?.substringAfterLast(':').orEmpty()
                     val link = resolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
                         ?.trim()?.removePrefix("\uFEFF") ?: return@withContext null
                     if (link.any { it.isWhitespace() }) {
@@ -101,7 +98,13 @@ internal fun TvScreen(activity: MainActivity, settings: SettingsStore) {
                         else -> link
                     }
                     val parsed = parseQrConfig(normalized) ?: return@withContext null
-                    if (legacy) parsed.copy(name = name.replace(Regex("(?i)\\.json$"), "").ifBlank { parsed.name }) else parsed
+                    if (!legacy) return@withContext parsed
+                    val name = runCatching {
+                        resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+                            ?.use { if (it.moveToFirst()) it.getString(0) else null }
+                    }.getOrNull()
+                        ?: uri.lastPathSegment?.substringAfterLast('/')?.substringAfterLast(':').orEmpty()
+                    parsed.copy(name = name.replace(Regex("(?i)\\.json$"), "").ifBlank { parsed.name })
                 } catch (_: java.io.IOException) {
                     null
                 } catch (_: SecurityException) {
