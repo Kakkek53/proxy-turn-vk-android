@@ -15,8 +15,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -141,9 +140,10 @@ internal fun TvScreen(activity: MainActivity, settings: SettingsStore) {
     val homeFocus = remember { FocusRequester() }
     val settingsFocus = remember { FocusRequester() }
     val selected = profiles.any { it.id == currentId }
-    LaunchedEffect(section == null, selected) {
-        if (section == null && selected) homeFocus.requestFocus()
-        if (section == null && !selected) settingsFocus.requestFocus()
+    LaunchedEffect(section, selected, applying) {
+        if (section == null && !applying) {
+            if (selected) homeFocus.requestFocus() else settingsFocus.requestFocus()
+        }
     }
 
     MaterialTheme(colorScheme = TvColors) {
@@ -390,10 +390,12 @@ private fun TvButton(
     }
     Button(
         onClick = onClick,
-        modifier = modifier.onFocusChanged { focused = it.isFocused },
+        modifier = modifier
+            .border(3.dp, if (focused && enabled) Color.White else Color.Transparent, shape)
+            .padding(6.dp)
+            .onFocusChanged { focused = it.isFocused },
         enabled = enabled,
         shape = shape,
-        border = if (focused) BorderStroke(3.dp, if (bright) TvColors.onPrimary else Color.White) else null,
         contentPadding = PaddingValues(8.dp),
         colors = ButtonDefaults.buttonColors(
             containerColor = container,
