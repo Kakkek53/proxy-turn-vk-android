@@ -1,7 +1,14 @@
 package com.wdtt.client
 
 import android.app.UiModeManager
+import android.content.ActivityNotFoundException
+import android.content.ContentValues
 import android.content.Context
+import android.content.Intent
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
+import android.widget.Toast
 import android.content.res.Configuration
 import android.provider.OpenableColumns
 import androidx.activity.compose.BackHandler
@@ -73,7 +80,7 @@ internal fun TvScreen(activity: MainActivity, settings: SettingsStore) {
     var loggingIn by remember { mutableStateOf(false) }
     var vkMessage by rememberSaveable { mutableStateOf("") }
 
-    val importFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+    val receiveConfig: (android.net.Uri?) -> Unit = { uri ->
         if (uri != null) scope.launch {
             val profile = withContext(Dispatchers.IO) {
                 try {
@@ -114,6 +121,21 @@ internal fun TvScreen(activity: MainActivity, settings: SettingsStore) {
             }
         }
     }
+
+    val getConfig = rememberLauncherForActivityResult(ActivityResultContracts.GetContent(), receiveConfig)
+    val openConfig = rememberLauncherForActivityResult(object : ActivityResultContracts.OpenDocument() {
+        override fun createIntent(context: Context, input: Array<String>): Intent {
+            val intent = super.createIntent(context, input)
+            @Suppress("DEPRECATION")
+            val handlers = context.packageManager.queryIntentActivities(intent, android.content.pm.PackageManager.MATCH_DEFAULT_ONLY)
+            if (handlers.none {
+                    val name = it.activityInfo.packageName
+                    !name.startsWith("com.google.android.tv.frameworkpackagestubs") &&
+                        !name.startsWith("com.android.tv.frameworkpackagestubs")
+                }) throw ActivityNotFoundException()
+            return intent
+        }
+    }, receiveConfig)
 
     BackHandler(section != null) { section = null }
     val homeFocus = remember { FocusRequester() }
@@ -214,10 +236,33 @@ internal fun TvScreen(activity: MainActivity, settings: SettingsStore) {
                                         TvSection.Configs -> {
                                             item {
                                                 TvRow("+ Добавить конфиг из .json", selected = true) {
-                                                    importFile.launch(arrayOf("application/json", "text/plain", "application/octet-stream"))
+                                                    try {
+                                                        openConfig.launch(arrayOf("*/*"))
+                                                    } catch (_: ActivityNotFoundException) {
+                                                        try {
+                                                            getConfig.launch("*/*")
+                                                        } catch (_: ActivityNotFoundException) {
+                                                            importMessage = "На телевизоре нет приложения для выбора файла"
+                                                        }
+                                                    }
                                                 }
                                             }
-                                            items(profiles, key = { it.id }) { Text(it.name, Modifier.padding(12.dp)) }
+                                            items(profiles, key = { it.id }) { profile ->
+                                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                                    Text(profile.name, Modifier.weight(1f).padding(12.dp))
+                                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                                                        TvButton(onClick = {
+                                                            scope.launch {
+                                                                val saved = withContext(Dispatchers.IO) {
+                                                                    val port = if (settings.manualPortsEnabled.first()) settings.serverDtlsPort.first() else 56000
+                                                                    saveTvConfig(activity, profile, port)
+                                                                }
+                                                                Toast.makeText(activity, if (saved) "Конфиг сохранён в Downloads" else "Не удалось сохранить конфиг", Toast.LENGTH_SHORT).show()
+                                                            }
+                                                        }) { Text("Экспорт .json") }
+                                                    }
+                                                }
+                                            }
                                             if (importMessage.isNotEmpty()) item { Text(importMessage) }
                                         }
                                         TvSection.Connection -> {
@@ -281,6 +326,42 @@ internal fun TvScreen(activity: MainActivity, settings: SettingsStore) {
                 }
             }
         }
+    }
+}
+
+@android.annotation.TargetApi(Build.VERSION_CODES.Q)
+private fun saveTvConfig(context: Context, profile: ConnectionProfile, serverPort: Int): Boolean {
+    val resolver = context.contentResolver
+    val name = profile.name.map { if (it in "/\\:" || it.isISOControl()) '_' else it }.joinToString("")
+        .trim().trim('.').take(100).ifBlank { "qWDTT" }
+    val peer = PeerAddress.ensurePort(profile.peer, serverPort)
+    val link = android.net.Uri.Builder().scheme("qwdtt").authority("config")
+        .appendQueryParameter("name", profile.name)
+        .appendQueryParameter("peer", peer)
+        .appendQueryParameter("hashes", profile.vkHashes)
+        .appendQueryParameter("workers", profile.workersPerHash.toString())
+        .appendQueryParameter("port", profile.listenPort.toString())
+        .appendQueryParameter("pass", profile.password)
+        .build().toString()
+    var uri: android.net.Uri? = null
+    return try {
+        val values = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, "$name.json")
+            put(MediaStore.MediaColumns.MIME_TYPE, "application/json")
+            put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+            put(MediaStore.MediaColumns.IS_PENDING, 1)
+        }
+        val destination = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: return false
+        uri = destination
+        resolver.openOutputStream(destination)?.bufferedWriter(Charsets.UTF_8)?.use { it.write(link) }
+            ?: throw java.io.IOException("Downloads stream unavailable")
+        values.clear()
+        values.put(MediaStore.MediaColumns.IS_PENDING, 0)
+        if (resolver.update(destination, values, null, null) == 0) throw java.io.IOException("Downloads entry unavailable")
+        true
+    } catch (_: Exception) {
+        uri?.let { runCatching { resolver.delete(it, null, null) } }
+        false
     }
 }
 
