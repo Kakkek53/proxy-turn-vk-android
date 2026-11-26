@@ -10,7 +10,6 @@ import android.os.Environment
 import android.provider.MediaStore
 import android.widget.Toast
 import android.content.res.Configuration
-import android.provider.OpenableColumns
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -85,26 +84,10 @@ internal fun TvScreen(activity: MainActivity, settings: SettingsStore) {
                     val resolver = activity.contentResolver
                     val link = resolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
                         ?.trim()?.removePrefix("\uFEFF") ?: return@withContext null
-                    if (link.any { it.isWhitespace() }) {
+                    if (!link.startsWith("qwdtt://config?") || link.any { it.isWhitespace() }) {
                         return@withContext null
                     }
-                    val legacy = link.startsWith("wdtt://") || link.startsWith("wddt://")
-                    val modern = link.startsWith("qwdtt://config") || link.startsWith("qwdtt:config") ||
-                        link.startsWith("qwddt://config")
-                    if (!legacy && !modern) return@withContext null
-                    val normalized = when {
-                        link.startsWith("wddt://") -> "wdtt://" + link.removePrefix("wddt://")
-                        link.startsWith("qwddt://") -> "qwdtt://" + link.removePrefix("qwddt://")
-                        else -> link
-                    }
-                    val parsed = parseQrConfig(normalized) ?: return@withContext null
-                    if (!legacy) return@withContext parsed
-                    val name = runCatching {
-                        resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
-                            ?.use { if (it.moveToFirst()) it.getString(0) else null }
-                    }.getOrNull()
-                        ?: uri.lastPathSegment?.substringAfterLast('/')?.substringAfterLast(':').orEmpty()
-                    parsed.copy(name = name.replace(Regex("(?i)\\.json$"), "").ifBlank { parsed.name })
+                    parseQrConfig(link)
                 } catch (_: java.io.IOException) {
                     null
                 } catch (_: SecurityException) {
@@ -112,7 +95,7 @@ internal fun TvScreen(activity: MainActivity, settings: SettingsStore) {
                 }
             }
             if (profile == null) {
-                importMessage = "Ошибка. В файле .json должна быть одна ссылка на конфиг."
+                importMessage = "Ошибка. В файле должна быть одна ссылка qwdtt://config."
             } else {
                 try {
                     profilesStore.saveProfile(profile)
