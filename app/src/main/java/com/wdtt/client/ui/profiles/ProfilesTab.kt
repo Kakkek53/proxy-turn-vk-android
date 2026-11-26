@@ -2060,7 +2060,7 @@ fun ProfilesTab(
 }
 
 
-private fun parseQrConfig(rawText: String): ConnectionProfile? {
+internal fun parseQrConfig(rawText: String): ConnectionProfile? {
     val trimmed = rawText.trim()
     if (trimmed.isEmpty()) return null
 

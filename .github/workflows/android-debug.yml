@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - develop
+      - android-tv
   pull_request:
     branches:
       - develop
@@ -22,6 +23,9 @@ jobs:
     name: Build debug APK
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    strategy:
+      matrix:
+        abi: [arm64-v8a, armeabi-v7a]
 
     steps:
       - name: Check out source
@@ -55,12 +59,12 @@ jobs:
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
 
       - name: Build debug APK
-        run: ./gradlew :app:assembleDebug -PtargetAbis=arm64-v8a --no-daemon
+        run: ./gradlew :app:assembleDebug -PtargetAbis=${{ matrix.abi }} --no-daemon
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: app-arm64-v8a-debug
-          path: app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
+          name: app-${{ matrix.abi }}-debug
+          path: app/build/outputs/apk/debug/app-${{ matrix.abi }}-debug.apk
           if-no-files-found: error
           retention-days: 14

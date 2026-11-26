@@ -176,6 +176,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val tv = isTvDevice(this)
+        requestedOrientation = if (tv) android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+            else android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         enableEdgeToEdge()
 
         checkAndRequestNotifications()
@@ -189,7 +192,11 @@ class MainActivity : ComponentActivity() {
             val themePalette by settingsStore.themePalette.collectAsStateWithLifecycle(initialValue = "indigo")
             val scope = rememberCoroutineScope()
 
-            WDTTTheme(themeMode = themeMode, dynamicColor = isDynamicColor, themePalette = themePalette) {
+            if (tv) {
+                WDTTTheme(themeMode = "dark", dynamicColor = false, themePalette = "indigo") {
+                    TvScreen(this, settingsStore)
+                }
+            } else WDTTTheme(themeMode = themeMode, dynamicColor = isDynamicColor, themePalette = themePalette) {
                 MainScreen(
                     settingsStore = settingsStore,
                     themeMode = themeMode,

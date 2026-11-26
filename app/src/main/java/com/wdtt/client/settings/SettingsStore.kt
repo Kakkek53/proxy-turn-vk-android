@@ -438,6 +438,17 @@ class SettingsStore(context: Context) {
     val isDynamicColor: Flow<Boolean> = dataStore.data.map { it[IS_DYNAMIC_COLOR] ?: false }
     val themePalette: Flow<String> = dataStore.data.map { it[THEME_PALETTE] ?: "indigo" }
 
+    private val tvVisibleVkCallKey = booleanPreferencesKey("tv_visible_vk_call")
+    val tvVisibleVkCall = dataStore.data.map { it[tvVisibleVkCallKey] ?: false }
+
+    suspend fun saveTvVisibleVkCall(value: Boolean) {
+        dataStore.edit { it[tvVisibleVkCallKey] = value }
+    }
+
+    suspend fun saveTvWorkers(value: Int) {
+        dataStore.edit { it[WORKERS_PER_HASH] = value }
+    }
+
     val currentProfileId: Flow<String> = dataStore.data.map { it[CURRENT_PROFILE_ID] ?: "" }
     val currentProfileName: Flow<String> = dataStore.data.map { it[CURRENT_PROFILE_NAME] ?: "" }
 

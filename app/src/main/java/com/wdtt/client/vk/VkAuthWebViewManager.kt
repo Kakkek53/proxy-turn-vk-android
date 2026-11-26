@@ -1,5 +1,7 @@
 package com.wdtt.client
 
+import kotlinx.coroutines.flow.first
+
 import android.annotation.SuppressLint
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -352,6 +354,10 @@ object VkAuthWebViewManager {
             return Result.failure(IllegalArgumentException("Некорректный VK-хеш"))
         }
 
+        val tv = isTvDevice(context)
+        if (tv && SettingsStore(context).tvVisibleVkCall.first()) {
+            return runJoinCall(context, cleanHash)
+        }
         if (hasVkSessionCookie()) {
             logAuth("Тихий вход в звонок…")
             val silent = authMutex.withLock {
@@ -364,8 +370,10 @@ object VkAuthWebViewManager {
             if (err is CancellationException) throw err
             val reason = err?.message?.take(80) ?: "timeout"
             logAuth("Тихий вход не удался ($reason) — WebView", verbose = true)
+            if (tv) return silent
             logAuth("Открываем WebView…")
         } else {
+            if (tv) return Result.failure(IllegalStateException("Войдите в ВК в настройках"))
             logAuth("Нет сессии VK — нужен вход")
         }
 
