@@ -15,7 +15,6 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -85,10 +84,11 @@ internal fun TvScreen(activity: MainActivity, settings: SettingsStore) {
                 try {
                     val resolver = activity.contentResolver
                     val name = resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
-                        ?.use { if (it.moveToFirst()) it.getString(0) else null }.orEmpty()
+                        ?.use { if (it.moveToFirst()) it.getString(0) else null }
+                        ?: uri.lastPathSegment?.substringAfterLast('/')?.substringAfterLast(':').orEmpty()
                     val link = resolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
                         ?.trim()?.removePrefix("\uFEFF") ?: return@withContext null
-                    if (!name.endsWith(".json", ignoreCase = true) || link.any { it.isWhitespace() }) {
+                    if (link.any { it.isWhitespace() }) {
                         return@withContext null
                     }
                     val legacy = link.startsWith("wdtt://") || link.startsWith("wddt://")
@@ -101,7 +101,7 @@ internal fun TvScreen(activity: MainActivity, settings: SettingsStore) {
                         else -> link
                     }
                     val parsed = parseQrConfig(normalized) ?: return@withContext null
-                    if (legacy) parsed.copy(name = name.dropLast(5)) else parsed
+                    if (legacy) parsed.copy(name = name.replace(Regex("(?i)\\.json$"), "").ifBlank { parsed.name }) else parsed
                 } catch (_: java.io.IOException) {
                     null
                 } catch (_: SecurityException) {
@@ -148,7 +148,7 @@ internal fun TvScreen(activity: MainActivity, settings: SettingsStore) {
 
     MaterialTheme(colorScheme = TvColors) {
         Surface(Modifier.fillMaxSize(), color = TvColors.background) {
-            Column(Modifier.fillMaxSize().padding(horizontal = 40.dp, vertical = 24.dp)) {
+            Column(Modifier.fillMaxSize().padding(horizontal = 28.dp, vertical = 16.dp)) {
                 val open = section
                 if (open == null) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
@@ -158,11 +158,11 @@ internal fun TvScreen(activity: MainActivity, settings: SettingsStore) {
                             bright = true
                         ) { Icon(Icons.Default.Settings, "Настройки") }
                     }
-                    Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(40.dp)) {
+                    Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
                         Column(Modifier.weight(1f)) {
                             Text("Сервера", style = MaterialTheme.typography.headlineMedium)
                             Spacer(Modifier.height(12.dp))
-                            LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 items(profiles, key = { it.id }) { profile ->
                                     TvRow(profile.name, profile.id == currentId, !running && !connecting && !applying) {
                                         applying = true
@@ -201,7 +201,7 @@ internal fun TvScreen(activity: MainActivity, settings: SettingsStore) {
                                 Icon(Icons.Default.PowerSettingsNew, if (running || connecting) "Отключить" else "Подключить",
                                     Modifier.size(72.dp))
                             }
-                            Spacer(Modifier.height(20.dp))
+                            Spacer(Modifier.height(10.dp))
                             val stage = when {
                                 pipeline.failed != null || pipeline.timedOut || failure != null -> "Ошибка"
                                 connecting && pipeline.current in listOf(null, ConnectionStep.DNS, ConnectionStep.VK, ConnectionStep.CAPTCHA) -> "Подключение к звонку"
@@ -222,7 +222,7 @@ internal fun TvScreen(activity: MainActivity, settings: SettingsStore) {
                     }
                     Spacer(Modifier.height(16.dp))
                     Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                        Column(Modifier.weight(0.38f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Column(Modifier.weight(0.38f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             TvSection.entries.forEach { item ->
                                 TvRow(item.label, item == open) { section = item }
                             }
@@ -231,7 +231,7 @@ internal fun TvScreen(activity: MainActivity, settings: SettingsStore) {
                             when (open) {
                                 TvSection.Bypass -> ExceptionsTab()
                                 TvSection.Logs -> LogsTab()
-                                else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                     when (open) {
                                         TvSection.Configs -> {
                                             item {
@@ -248,7 +248,7 @@ internal fun TvScreen(activity: MainActivity, settings: SettingsStore) {
                                                 }
                                             }
                                             items(profiles, key = { it.id }) { profile ->
-                                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                                     Text(profile.name, Modifier.weight(1f).padding(12.dp))
                                                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                                                         TvButton(onClick = {
@@ -283,7 +283,7 @@ internal fun TvScreen(activity: MainActivity, settings: SettingsStore) {
                                                 }
                                                 val power = workers.coerceIn(step, max)
                                                 Row(verticalAlignment = Alignment.CenterVertically,
-                                                    horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                                    horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                                     Text("Мощность: $power", Modifier.weight(1f))
                                                     TvButton({ scope.launch { settings.saveTvWorkers((power - step).coerceAtLeast(step)) } },
                                                         Modifier.size(46.dp), enabled = power > step && !running && !connecting) { Text("−") }
@@ -384,22 +384,20 @@ private fun TvButton(
 ) {
     var focused by remember { mutableStateOf(false) }
     val container = when {
+        focused && enabled -> Color(0xFFD1E8FF)
         bright -> TvColors.primary
         chosen -> Color(0xFFBDBDBD)
         else -> TvColors.surface
     }
     Button(
         onClick = onClick,
-        modifier = modifier
-            .border(3.dp, if (focused && enabled) Color.White else Color.Transparent, shape)
-            .padding(6.dp)
-            .onFocusChanged { focused = it.isFocused },
+        modifier = modifier.onFocusChanged { focused = it.isFocused },
         enabled = enabled,
         shape = shape,
         contentPadding = PaddingValues(8.dp),
         colors = ButtonDefaults.buttonColors(
             containerColor = container,
-            contentColor = if (bright || chosen) TvColors.onPrimary else Color.White,
+            contentColor = if (focused || bright || chosen) TvColors.onPrimary else Color.White,
             disabledContainerColor = container,
             disabledContentColor = if (bright || chosen) TvColors.onPrimary else Color.LightGray
         ),
